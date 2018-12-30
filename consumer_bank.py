@@ -1,3 +1,16 @@
+''' Consumer Bank Emulator to test the NOOB central bank
+
+First start the NOOB
+
+    noob.py
+
+Then start any number of consumber bank instances:
+
+    consumer_bank.py <bank code> <value of local coin in euro's>
+    
+Then perform some transactions, both remote and local
+'''
+
 import sys
 import asyncio
 import websockets
@@ -32,7 +45,7 @@ class ConsumerBank:
             await asyncio.gather (
                 async with websockets.connect (centralBankUrl) as self.masterSocket:
                     while True:
-                        await (masterSocket.send (json.dumps ('[connect', self.bankCode]))
+                        await (masterSocket.send (json.dumps ('[register', 'master', self.bankCode]))
                         if json.loads (await self.masterSocket.recv ()):
                             print ('NOOB declined master connection')
                         else:
@@ -41,7 +54,7 @@ class ConsumerBank:
                             
                 async with websockets.connect (centralBankUrl) as self.slaveSocket:
                     while True:
-                        await (self.slaveSocket.send (self.bankCode)
+                        await (self.slaveSocket.send (json.dumps (['connect', 'slave', self.bankCode)]))
                         if json.loads (await self.slaveSocket.recv ()):
                             print ('NOOB declined slave connection')
                         else:
