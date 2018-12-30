@@ -53,23 +53,31 @@ class Nooc:
         
         async def connectMaster ():
             async with websockets.connect (noobUrl) as self.masterSocket:
+                await aioconsole.ainput (f'Master socket: {self.masterSocket}\n')
                 while True:
+                    print ('Master loop, await send')
                     await self.masterSocket.send (json.dumps (['register', 'master', self.bankCode]))
+                    
+                    print ('Master loop, await receive')
                     if json.loads (await self.masterSocket.recv ()):
-                        print ('NOOB declined master connection')
-                    else:
                         print ('NOOB accepted master connection')
                         await self.issueCommandFromLocal (self)
+                    else:
+                        print ('NOOB declined master connection')
                 
         async def connectSlave ():
             async with websockets.connect (noobUrl) as self.slaveSocket:
+                await aioconsole.ainput (f'Slave socket: {self.slaveSocket}\n')
                 while True:
+                    print ('Slave loop, await send')
                     await self.slaveSocket.send (json.dumps (['register', 'slave', self.bankCode]))
+                    
+                    print ('Slave loop, await receive')
                     if json.loads (await self.slaveSocket.recv ()):
-                        print ('NOOB declined slave connection')
-                    else:
                         print ('NOOB accepted slave connection')
-                        await self.issueCommandFromRemote (self)           
+                        await self.issueCommandFromRemote ()           
+                    else:
+                        print ('NOOB declined slave connection')
         
         await asyncio.gather (
             connectMaster (),
