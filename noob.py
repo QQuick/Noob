@@ -40,6 +40,7 @@ Happy banking!
 import asyncio
 import websockets
 import json
+import traceback
 
 import noob_connection_data
 
@@ -51,9 +52,9 @@ def debugPrint (*args):
 
 class Noob:
     def __init__ (self):
-        clientSockets = {}
+        self.slaveSockets = {}
         
-        # Wait for connection request and call server on a fresh socket if it occurs
+        # Start socket creator (as opposed to server) and run it until complete, which is never
         serverFuture = websockets.serve (self.server, noob_connection_data.hostName, noob_connection_data.portNr)
         asyncio.get_event_loop () .run_until_complete (serverFuture)
         
@@ -61,32 +62,25 @@ class Noob:
         asyncio.get_event_loop () .run_forever ()
         
     async def server (self, socket, path):
-        command, role, bankCode = await socket.recv ()
-        if command == 'register':
-            if not bankCode in clientSockets:
-                clientSockets [bankCode] = {}
-                
-            if role in {'master', 'slave'}:
-                if role in clientSockets [bankCode]:
-                    debugPrint (f'Duplicate registration declined from {role} {bankCode}'*)
-                    await socket.send (json.dumps (False)
-                else:            
-                    debugPrint (f'Registration accepted from {role} {bankCode}')
-                    clientSockets [bankCode][role] = socket
-                    await socket.send (json.dumps (True))
+        ''' Called once for each master or slave
+        '''
+        try:
+            command, role, bankCode = json.loads (await socket.recv ())
+            if command == 'register':
+                if role == 'slave':
+                    self.slaveSockets [bankCode] = socket
+                else:
+                    while True:
+                        bankCode, command, accountNr, pin, amount = json.loads (await socket.recv ())
+                        await self.slaveSockets [bankCode] .send (json.dumps ([command, accounNr, pin, amount]))
+                        await socket.send (await self.slaveSockets [bankCode] .recv ()) # skip dumps and loads, since they cancel out
             else:
-                debugPrint (f'Unknown role {role} for {bankCode}')
-                await socket.send (json.dumps (False)  
-        else:
-            debugPrint (f'Unexpected command {command} from {role} {bankCode} instead of registration')
-            await socket.send (json.dumps (False))
-            return
-            
-        if role == 'master':
-            while True:
-                bankCode, command, accountNr, pin, amount = json.loads (await socket.recv ())
-                await slaveSockets [bankCode] .send (json.dumps ([command, accounNr, pin, amount]))
-                await socket.send (await slaveSocket [bankCode] .recv ()) # Skip decoding and recoding, since they cancel out
+                debugPrint (f'Unexpected command {command} from {role} {bankCode} instead of registration')
+                await socket.send (json.dumps (False))
+                return
+        except:
+            print (traceback.format_exc ())
+            exit (1)
               
 noob = Noob ()
 
