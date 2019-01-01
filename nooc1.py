@@ -95,10 +95,10 @@ class Nooc:
             pin = await aioconsole.ainput ('Pin: ')  
             print ('\n' * 256)  # Simplicity preferred over security in this demo
             
-            targetBankCode = (await aioconsole.ainput ('Target bank code (enter = this): ')) .lower ()
-            if not targetBankCode:
-                targetBankCode = self.bankCode
-                print (f'Target bank code {bankCode} assumed')
+            slaveBankCode = (await aioconsole.ainput ('Bank code (enter = this): ')) .lower ()
+            if not slaveBankCode:
+                slaveBankCode = self.bankCode
+                print (f'Bank code {slaveBankCode} assumed')
                 
             accountNr = (await aioconsole.ainput ('Account number: ')) .lower ()
             
@@ -110,7 +110,7 @@ class Nooc:
             # --- Allow user to verify input, except pincode
             
             print (f'Command: {command}')
-            print (f'Target bank code: {targetBankCode}')
+            print (f'Bank code: {slaveBankCode}')
             print (f'Account nr: {accountNr}')
             
             if command in {'deposit', 'withdraw'}:
@@ -122,10 +122,10 @@ class Nooc:
             
             # --- Issue command for local or remote execution
             
-            if targetBankCode == self.bankCode:
+            if slaveBankCode == self.bankCode:
                 print ('Success' if self.executeCommandLocally (command, accountNr, pin, amount) else 'Failure')
             else:
-                print ('Success' if await self.executeCommandRemotely (targetBankCode, command, accountNr, pin, amount) else 'Failure')
+                print ('Success' if await self.executeCommandRemotely (slaveBankCode, command, accountNr, pin, amount) else 'Failure')
                 
         elif command == 'quit':
             await self.masterSocket.send (json.dumps ('disconnect'))
@@ -139,13 +139,13 @@ class Nooc:
             print ('Unknown command')
             
     async def issueCommandFromRemote (self):
-        ''' Obtains a command from the slave socket and issuea an execution order
+        ''' Obtains a command from the slave socket and issues an execution order
         - The central bank used the bank code on the order it received, to send it to this bank specifially, for local execution
         - Since there's no need for the bank code anymore, the central bank stripped it off
         '''
-        await self.slaveSocket.send (json.dumps (['query']))
+        await self.slaveSocket.send (json.dumps ('query'))
         command, accountNr, pin, amount = json.loads (await self.slaveSocket.recv ())
-        await self.slaveSocket.send (self.executeCommandLocally (command, accountNr, pin, amount / valueOfLocalCoinInEuros))
+        await self.slaveSocket.send (json.dumps (self.executeCommandLocally (command, accountNr, pin, amount / self.valueOfLocalCoinInEuros)))
                 
     def executeCommandLocally (self, command, accountNr, pin, amount): 
         ''' Executes a command on the local bank
@@ -184,7 +184,7 @@ class Nooc:
         - Returns False if delegated command fails
         '''
         await self.masterSocket.send (json.dumps ([bankCode, command, accountNr, pin, amount * self.valueOfLocalCoinInEuros]))
-        return await json.loads (self.masterSocket.recv ())
+        return json.loads (await self.masterSocket.recv ())
     
 if len (sys.argv) < 3:
     print (f'Usage: python {sys.argv [0]} <bank code> <value of local coin in euro\'s>')

@@ -49,8 +49,8 @@ debug = True
 class Noob:
     def __init__ (self):
         self.print ('Central bank initiated')
-        self.roles = ('master', 'slave')
-        self.queues = {role: {} for role in self.roles}
+        self.commandQueues = {}
+        self.replyQueues = {}
         
         # Start socket creator (as opposed to server) and run it until complete, which is never
         serverFuture = websockets.serve (self.server, noob_connection_data.hostName, noob_connection_data.portNr)
@@ -83,18 +83,37 @@ class Noob:
         self.print (f'Instantiated socket: {socket}')
         try:
             command, role, bankCode = await (self.recv (socket))
-            otherRole = self.roles [1 - self.roles.index (role)]
             
             if command == 'register':
                 await self.send (socket, True)
-                self.queues [role][bankCode] = asyncio.Queue ()
-                while True:
-                    # Receive message from bank playing own role and put it in queue for bank playing other role
-                    message = await self.recv (socket)
-                    await self.queues [otherRole][message [0]] .put (message [1:])
-                    
-                    # Get message from queue for bank playing own role and send it to bank playing other role
-                    await self.send (await queues [role][bankCode])
+
+                if role == 'master':
+                    self.commandQueues [bankCode] = asyncio.Queue ()
+                    while True:
+                        # Receive command from own master
+                        message = await self.recv (socket)
+                        
+                        # Put it in the queue belonging to the right slave
+                        await self.commandQueues [message [0]] .put ([bankCode] + message [1:])
+                        
+                        # Get reply of slave from own master queue and send it to master
+                        # The master gives a command to only one slave at a time, so he knows who answered
+                        await self.send (socket, await self.replyQueues [bankCode] .get ())
+                else:
+                    self.replyQueues [bankCode] = asyncio.Queue ()
+                    while True:
+                        # Receive query from own slave
+                        message = await self.recv (socket)
+                        
+                        # Wait until command in own slave queue
+                        message = await self.commandQueues [bankCode] .get ()
+                        
+                        # Send it to own slave
+                        await self.send (socket, message [1:])
+                                               
+                        # Get reply from own slave and put it in the right reply queue
+                        await self.replyQueues [message [0]] .put (await self.recv (socket))    
+   
             else:
                 self.print (f'Error: register command expected')
                 await socket.send (json.dumps (False))
