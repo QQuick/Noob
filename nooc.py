@@ -2,21 +2,21 @@
 
 A.K.A. Naieve Ontzettend Onveilige Client
 
-The NOOC is a consumer bank emulator to test the NOOB central bank
+The NOOC is a consumer bank emulator to test the NOOB central bank.
 
-First start the NOOB
+First start the NOOB:
 
     python noob.py
 
 Then start any number of NOOC instances:
 
-    python nooc.py <bank code of the instance> <value of local coin in euro's>
+    python nooc.py <unique bank code> <value of local coin in euro's>
     
-Then perform some transactions, both remote and local
+Then open some accounts and perform several transactions, both remote and local.
 
-There may be only one instance with a certain bank code
-If a bank has multiple branches, it should address the central bank from an overarching entity
-In other words, the central bank is for interbank traffic only, not to glue branches together
+Note that there may be only one instance with a certain bank code.
+If a bank has multiple branches, it should address the central bank from an overarching entity.
+In other words, the central bank is for interbank traffic only, not to glue branches together.
 While it doesn't make profit, it isn't a charity either...
 '''
 
@@ -37,13 +37,15 @@ class Nooc:
             self.balance = 0
         
     def __init__ (self, bankCode, valueOfLocalCoinInEuros):
-        print ('\nConsumer bank emulator initiated\n')
-    
         self.bankCode = bankCode
+        self.print ('Consumer bank emulator initiated')    
         self.valueOfLocalCoinInEuros = valueOfLocalCoinInEuros  # All communication with central bank done in Euros
-        accounts = {}
+        self.accounts = {}
         clientCoroutineObject = self.client ()
         asyncio.run (clientCoroutineObject)
+        
+    def print (self, *args):
+        print (f'{self.bankCode.upper ()} -', *args)
 
     async def client (self):
         ''' Initiates master and slave connections
@@ -51,59 +53,56 @@ class Nooc:
         - The slave connection is used to perform remotely requested transactions on the local bank
         '''
         
-        async def connectMaster ():
-            async with websockets.connect (noobUrl) as self.masterSocket:
-                await aioconsole.ainput (f'Master socket: {self.masterSocket}\n')
+        async def runMaster ():
+            await self.masterSocket.send (json.dumps (['register', 'master', self.bankCode]))
+            if json.loads (await self.masterSocket.recv ()):
+                self.print ('Master registration accepted by NOOB')                   
                 while True:
-                    print ('Master loop, await send')
-                    await self.masterSocket.send (json.dumps (['register', 'master', self.bankCode]))
-                    
-                    print ('Master loop, await receive')
-                    if json.loads (await self.masterSocket.recv ()):
-                        print ('NOOB accepted master connection')
-                        await self.issueCommandFromLocal (self)
-                    else:
-                        print ('NOOB declined master connection')
+                    await self.issueCommandFromLocal ()
+            else:
+                self.print ('Master registration rejected by NOOB')
                 
-        async def connectSlave ():
-            async with websockets.connect (noobUrl) as self.slaveSocket:
-                await aioconsole.ainput (f'Slave socket: {self.slaveSocket}\n')
+        async def runSlave ():
+            await self.slaveSocket.send (json.dumps (['register', 'slave', self.bankCode])) 
+            if json.loads (await self.slaveSocket.recv ()):
+                self.print ('Slave registration accepted by NOOB')
                 while True:
-                    print ('Slave loop, await send')
-                    await self.slaveSocket.send (json.dumps (['register', 'slave', self.bankCode]))
-                    
-                    print ('Slave loop, await receive')
-                    if json.loads (await self.slaveSocket.recv ()):
-                        print ('NOOB accepted slave connection')
-                        await self.issueCommandFromRemote ()           
-                    else:
-                        print ('NOOB declined slave connection')
+                    await self.issueCommandFromRemote ()           
+            else:
+                self.print ('Slave registration rejected by NOOB')
         
-        await asyncio.gather (
-            connectMaster (),
-            connectSlave ()                         
-        )
+        
+        async with websockets.connect (noobUrl) as self.masterSocket:
+             self.print ('Master connection accepted by NOOB')
+             async with websockets.connect (noobUrl) as self.slaveSocket:
+                self.print ('Slave connection accepted by NOOB')
+                await asyncio.gather (
+                    runMaster (),
+                    runSlave ()                         
+                )
             
     async def issueCommandFromLocal (self):
+        await asyncio.sleep (1)
+        self.print ('local')
         ''' Obtains a command from the console and issues and execution order
         - If the bankcode matches the local bank, the order is executed locally
         - If the bankcode doesn't match this local bank, the order is executed remotely
         '''
         
-        command = await aioconsole.ainput ('Open, close, deposit, withdraw or quit: ') .lower ()
+        command = (await aioconsole.ainput ('Open, close, deposit, withdraw or quit: ')) .lower ()
         
         if command in {'open', 'close', 'deposit', 'withdraw'}:
             # --- Get user input
             
-            message.pin = await aioconsole.ainput ('Pin: ')  
+            pin = await aioconsole.ainput ('Pin: ')  
             print ('\n' * 256)  # Simplicity preferred over security in this demo
             
-            message.bankCode = await aioconsole.ainput ('Bank code: (enter=this)') .lower ()
-            if not message.bankCode:
-                message.bankCode = self.bankCode
+            bankCode = (await aioconsole.ainput ('Bank code (enter = this): ')) .lower ()
+            if not bankCode:
+                bankCode = self.bankCode
                 print (f'Bankcode {bankCode} assumed')
                 
-            message.accountNr = await aioconsole.ainput ('Account number') .lower ()
+            accountNr = (await aioconsole.ainput ('Account number: ')) .lower ()
             
             if command in {'open', 'close'}:
                 amount = 0
@@ -116,12 +115,10 @@ class Nooc:
             print (f'Bank code: {bankCode}')
             print (f'Account nr: {accountNr}')
             
-            if command in {'open', 'close'}:
+            if command in {'deposit', 'withdraw'}:
                 print (f'Amount: {amount}')
-                
-            mistake = await aioconsole.input ('Correct (yes / no)') .lower () != 'yes'  # Stay on the safe side
-            
-            if mistake:
+                            
+            if (await aioconsole.ainput ('Correct (yes / no): ')) .lower () != 'yes':    # Stay on the safe side
                 print ('Transaction broken off')
                 return
             
@@ -136,7 +133,7 @@ class Nooc:
             await self.masterSocket.send (json.dumps ('disconnect'))
             print ('NOOB accepted master disconnection' if await self.masterSocket.recv () else 'NOOB declined master disconnection')
             await self.slaveSocket.send (json.dumps ('disconnect'))
-            print ('NOOB accepted slave disconnection' if await self.masterSocket.recv () else 'NOOB declined slave disconnection')
+            print ('NOOB accepted slave disconnection' if await self.slaveSocket.recv () else 'NOOB declined slave disconnection')
             print ('\nConsumber bank emulator terminated\n')
             sys.exit (0)
             
@@ -144,11 +141,15 @@ class Nooc:
             print ('Unknown command')
             
     async def issueCommandFromRemote (self):
+        await asyncio.sleep (5)    
+        self.print ('remote')
+
+
         ''' Obtains a command from the slave socket and issuea an execution order
         - The central bank used the bank code on the order it received, to send it to this bank specifially, for local execution
         - Since there's no need for the bank code anymore, the central bank stripped it off
         '''
-        command, accountNr, pin, amount = json.loads (await self.slaveSocket.recv ())
+        command, accountNr, pin, amount = json.loads (await self.slaveSocket.recv ()) #################
         await self.slaveSocket.send (json.dumps (self.executeCommandLocally (command, accountNr, pin, amount / valueOfLocalCoinInEuros)))
                 
     def executeCommandLocally (self, command, accountNr, pin, amount): 
@@ -160,7 +161,7 @@ class Nooc:
             if accountNr in self.accounts:
                 return False
             else:
-                self.accounts [accountNr] = Account ()
+                self.accounts [accountNr] = self.Account (pin)
                 return True
         elif command == 'close':
             if accountNr in self.accounts:
@@ -181,7 +182,7 @@ class Nooc:
                         return True       
         return success
         
-    async def executeCommandRemotely (bankCode, command, accountNr, pin, amount):
+    async def executeCommandRemotely (self, bankCode, command, accountNr, pin, amount):
         '''Executes a command on the remove bank by delegation
         - Returns True if delegated command succeeds
         - Returns False if delegated command fails
