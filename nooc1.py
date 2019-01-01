@@ -82,8 +82,6 @@ class Nooc:
                 )
             
     async def issueCommandFromLocal (self):
-        await asyncio.sleep (1)
-        self.print ('local')
         ''' Obtains a command from the console and issues and execution order
         - If the bankcode matches the local bank, the order is executed locally
         - If the bankcode doesn't match this local bank, the order is executed remotely
@@ -97,10 +95,10 @@ class Nooc:
             pin = await aioconsole.ainput ('Pin: ')  
             print ('\n' * 256)  # Simplicity preferred over security in this demo
             
-            bankCode = (await aioconsole.ainput ('Bank code (enter = this): ')) .lower ()
-            if not bankCode:
-                bankCode = self.bankCode
-                print (f'Bankcode {bankCode} assumed')
+            targetBankCode = (await aioconsole.ainput ('Target bank code (enter = this): ')) .lower ()
+            if not targetBankCode:
+                targetBankCode = self.bankCode
+                print (f'Target bank code {bankCode} assumed')
                 
             accountNr = (await aioconsole.ainput ('Account number: ')) .lower ()
             
@@ -112,7 +110,7 @@ class Nooc:
             # --- Allow user to verify input, except pincode
             
             print (f'Command: {command}')
-            print (f'Bank code: {bankCode}')
+            print (f'Target bank code: {targetBankCode}')
             print (f'Account nr: {accountNr}')
             
             if command in {'deposit', 'withdraw'}:
@@ -124,10 +122,10 @@ class Nooc:
             
             # --- Issue command for local or remote execution
             
-            if bankCode == self.bankCode:
+            if targetBankCode == self.bankCode:
                 print ('Success' if self.executeCommandLocally (command, accountNr, pin, amount) else 'Failure')
             else:
-                print ('Success' if await self.executeCommandRemotely (bankCode, command, accountNr, pin, amount) else 'Failure')
+                print ('Success' if await self.executeCommandRemotely (targetBankCode, command, accountNr, pin, amount) else 'Failure')
                 
         elif command == 'quit':
             await self.masterSocket.send (json.dumps ('disconnect'))
@@ -141,16 +139,13 @@ class Nooc:
             print ('Unknown command')
             
     async def issueCommandFromRemote (self):
-        await asyncio.sleep (5)    
-        self.print ('remote')
-
-
         ''' Obtains a command from the slave socket and issuea an execution order
         - The central bank used the bank code on the order it received, to send it to this bank specifially, for local execution
         - Since there's no need for the bank code anymore, the central bank stripped it off
         '''
-        command, accountNr, pin, amount = json.loads (await self.slaveSocket.recv ()) #################
-        await self.slaveSocket.send (json.dumps (self.executeCommandLocally (command, accountNr, pin, amount / valueOfLocalCoinInEuros)))
+        await self.slaveSocket.send (json.dumps (['query']))
+        command, accountNr, pin, amount = json.loads (await self.slaveSocket.recv ())
+        await self.slaveSocket.send (self.executeCommandLocally (command, accountNr, pin, amount / valueOfLocalCoinInEuros))
                 
     def executeCommandLocally (self, command, accountNr, pin, amount): 
         ''' Executes a command on the local bank
@@ -179,7 +174,7 @@ class Nooc:
                         return False
                     else:
                         self.accounts [accountNr] .balance -= amount
-                        return True 
+                        return True
         else:
             return False
         
