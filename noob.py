@@ -37,55 +37,80 @@ Possible replies are:
 Happy banking!
 '''
 
+import sys
 import asyncio
 import websockets
-import json
 import traceback
 
-import noob_connection_data
+import bank
 
-debug = True
-
-class Noob:
+class Noob (bank.Bank):
     def __init__ (self):
-        self.print ('Central bank initiated')   
-        self.slaveSockets = {}
+        super () .__init__ (self.centralBankCode)
+        
+        self.print ('Central bank initiated')
+        
+        self.commandQueues = {}
+        self.replyQueues = {}
         
         # Start socket creator (as opposed to server) and run it until complete, which is never
-        serverFuture = websockets.serve (self.server, noob_connection_data.hostName, noob_connection_data.portNr)
+        serverFuture = websockets.serve (self.server, self.centralHostName, self.centralPortNr)
         asyncio.get_event_loop () .run_until_complete (serverFuture)
         
         # Prevent termination of event loop
         asyncio.get_event_loop () .run_forever ()
         
-    def print (self, *args):
-        if debug:
-            print ('NOOB -', *args)
-
     async def server (self, socket, path):
-        ''' Called once for each master or slave
         '''
-        self.print ('Server function entered')
+        Role communication handler
+        - Called once for each master and once for each slave
+        - Handles the socket belonging to the master or slave that it's called for
+        - Remains looping for that master or slave until connection is closed
+        - So several calls of this coroutine run concurrently, one per master and one per slave
+        '''
+        
         try:
-            command, role, bankCode = json.loads (await socket.recv ())
-            self.print (f'Received command: {command} {role} {bankCode}')
+            self.print (f'Instantiated socket: {socket}')
+            role = 'uncommited'
+
+            command, role, bankCode = await (self.recv (socket, role))
             if command == 'register':
-                await socket.send (json.dumps (True))
-                if role == 'slave':
-                    self.slaveSockets [bankCode] = socket
-                    self.print (f'Slave sockets: {self.slaveSockets}')
-                else:
+                await self.send (socket, role, True)
+
+                if role == 'master':
+                    self.commandQueues [bankCode] = asyncio.Queue ()
                     while True:
-                        bankCode, command, accountNr, pin, amount = json.loads (await socket.recv ()) #############
-                        await self.slaveSockets [bankCode] .send (json.dumps ([command, accounNr, pin, amount]))
-                        await socket.send (await self.slaveSockets [bankCode] .recv ()) # skip dumps and loads, since they cancel out
+                        # Receive command from own master
+                        message = await self.recv (socket, role)
+                        
+                        # Put it in the queue belonging to the right slave
+                        await self.commandQueues [message [0]] .put ([bankCode] + message [1:])
+                        
+                        # Get reply of slave from own master queue and send it to master
+                        # The master gives a command to only one slave at a time, so he knows who answered
+                        await self.send (socket, role, await self.replyQueues [bankCode] .get ())
+                else:
+                    self.replyQueues [bankCode] = asyncio.Queue ()
+                    while True:
+                        # Receive query from own slave
+                        message = await self.recv (socket, role)
+                        
+                        # Wait until command in own slave queue
+                        message = await self.commandQueues [bankCode] .get ()
+                        
+                        # Send it to own slave
+                        await self.send (socket, message [1:], role)
+                                               
+                        # Get reply from own slave and put it in the right reply queue
+                        await self.replyQueues [message [0]] .put (await self.recv (socket, role))    
+
             else:
-                self.print (f'Unexpected command {command} from {role} {bankCode} instead of registration')
-                await socket.send (json.dumps (False))
-                return
+                self.print (f'Error: register command expected')
+                await socket.send (json.dumps (False), role)
+                sys.exit (1)
         except:
-            print (traceback.format_exc ())
-            exit (1)
+            self.print (traceback.format_exc ())
+            sys.exit (1)
               
 noob = Noob ()
 
