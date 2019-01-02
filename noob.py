@@ -99,7 +99,7 @@ class Noob (bank.Bank):
                         message = await self.commandQueues [bankCode] .get ()
                         
                         # Send it to own slave
-                        await self.send (socket, message [1:], role)
+                        await self.send (socket, role, message [1:])
                                                
                         # Get reply from own slave and put it in the right reply queue
                         await self.replyQueues [message [0]] .put (await self.recv (socket, role))    

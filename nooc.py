@@ -27,6 +27,9 @@ import websockets
 import bank
     
 class Nooc (bank.Bank):
+    debug = False
+    separator = '=' * 40
+
     class Account:
         def __init__ (self, pin):
             self.pin = pin
@@ -64,8 +67,8 @@ class Nooc (bank.Bank):
              async with websockets.connect (self.noobUrl) as self.slaveSocket:
                 self.print ('Slave connection accepted by NOOB')
                 await asyncio.gather (
-                    run (self.masterSocket, 'master', self.issueCommandFromLocal),
-                    run (self.slaveSocket, 'slave', self.issueCommandFromRemote)                         
+                    run (self.slaveSocket, 'slave', self.issueCommandFromRemote),                        
+                    run (self.masterSocket, 'master', self.issueCommandFromLocal)
                 )
             
     async def issueCommandFromLocal (self):
@@ -74,14 +77,22 @@ class Nooc (bank.Bank):
         - If the bankcode doesn't match this local bank, the order is executed remotely
         '''
         
-        command = await self.input ('Open, close, deposit, withdraw or quit: ')
+        command = await self.input ('Open, close, deposit, withdraw, quit or hack: ')
         
-        if command in {'open', 'close', 'deposit', 'withdraw'}:
+        if command in {'open', 'close', 'deposit', 'withdraw', 'hack'}:
+            
+            # --- Show current account statuses
+            
+            if command == 'hack':
+                self.print (f'{self.separator}')
+                for accountNr, account in self.accounts.items ():
+                    self.print (accountNr, account.pin, account.balance)
+                self.print (f'{self.separator}')
+                return
         
             # --- Get user input
             
-            pin = await self.input ('Pin: ')  
-            self.print ('\n' * 256)  # Simplicity preferred over security in this demo
+            pin = await self.input ('Pin: ')
             
             slaveBankCode = await self.input ('Bank code (enter = this): ')
             if not slaveBankCode:
@@ -130,9 +141,9 @@ class Nooc (bank.Bank):
         - The central bank used the bank code on the order it received, to send it to this bank specifially, for local execution
         - Since there's no need for the bank code anymore, the central bank stripped it off
         '''
-        await self.send (self.slaveSocket, 'slave', 'query')
-        command, accountNr, pin, amount = await self.recv (self.slaveSocket, 'slave')
-        await self.send (slaveSocket, 'slave', self.executeCommandLocally (command, accountNr, pin, amount / self.valueOfLocalCoinInEuros))
+        await self.send (self.slaveSocket, 'slave', 'query', self.debug)
+        command, accountNr, pin, amount = await self.recv (self.slaveSocket, 'slave', self.debug)
+        await self.send (self.slaveSocket, 'slave', self.executeCommandLocally (command, accountNr, pin, amount / self.valueOfLocalCoinInEuros), self.debug)
                 
     def executeCommandLocally (self, command, accountNr, pin, amount): 
         ''' Executes a command on the local bank
@@ -170,8 +181,8 @@ class Nooc (bank.Bank):
         - Returns True if delegated command succeeds
         - Returns False if delegated command fails
         '''
-        await self.send (masterSocket, 'master', [bankCode, command, accountNr, pin, amount * self.valueOfLocalCoinInEuros])
-        return await self.recv (masterSocket, 'master')
+        await self.send (self.masterSocket, 'master', [bankCode, command, accountNr, pin, amount * self.valueOfLocalCoinInEuros])
+        return await self.recv (self.masterSocket, 'master')
     
 if len (sys.argv) < 3:
     print (f'Usage: python {sys.argv [0]} <bank code> <value of local coin in euro\'s>')
