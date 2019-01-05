@@ -28,8 +28,13 @@ import bank
     
 class Nooc (bank.Bank):
     debug = False
-    separator = '=' * 40
-
+    
+    columnWidth = 15
+    nrOfColumns = 3
+    tableWidth = nrOfColumns * columnWidth + nrOfColumns - 1
+    tableSeparator = '=' * tableWidth
+    headerUnderline = '-' * tableWidth
+    
     class Account:
         def __init__ (self, pin):
             self.pin = pin
@@ -71,6 +76,13 @@ class Nooc (bank.Bank):
                     run (self.masterSocket, 'master', self.issueCommandFromLocal)
                 )
             
+    def match (self, commandStart, *commandSet):
+        for command in commandSet:
+            if command.startswith (commandStart):
+                return True
+        else:
+            return False
+    
     async def issueCommandFromLocal (self):
         ''' Obtains a command from the console and issues and execution order
         - If the bankcode matches the local bank, the order is executed locally
@@ -79,15 +91,17 @@ class Nooc (bank.Bank):
         
         command = await self.input ('Open, close, deposit, withdraw, quit or hack: ')
         
-        if command in {'open', 'close', 'deposit', 'withdraw', 'hack'}:
+        if self.match (command, 'open', 'close', 'deposit', 'withdraw', 'hack'):
             
             # --- Show current account statuses
             
-            if command == 'hack':
-                self.print (f'{self.separator}')
+            if self.match (command, 'hack'):
+                self.print (f'{self.tableSeparator}')
+                self.print (f'{"account nr":{self.columnWidth}}{"pin":{self.columnWidth}}{"balance":{self.columnWidth}}')
+                self.print (f'{self.headerUnderline}')
                 for accountNr, account in self.accounts.items ():
-                    self.print (accountNr, account.pin, account.balance)
-                self.print (f'{self.separator}')
+                    self.print (f'{accountNr:{self.columnWidth}} {account.pin:{self.columnWidth}} {account.balance:{self.columnWidth}}')
+                self.print (f'{self.tableSeparator}')
                 return
         
             # --- Get user input
@@ -101,7 +115,7 @@ class Nooc (bank.Bank):
                 
             accountNr = await self.input ('Account number: ')
             
-            if command in {'open', 'close'}:
+            if self.match (command, 'open', 'close'):
                 amount = 0
             else:
                 amount = float (await self.input ('Amount: '))
@@ -112,10 +126,10 @@ class Nooc (bank.Bank):
             self.print (f'Bank code: {slaveBankCode}')
             self.print (f'Account nr: {accountNr}')
             
-            if command in {'deposit', 'withdraw'}:
+            if self.match (command, 'deposit', 'withdraw'):
                 self.print (f'Amount: {amount}')
                             
-            if await self.input ('Correct (yes / no): ') != 'yes':    # Stay on the safe side
+            if not self.match (await self.input ('Correct (yes / no): '), 'yes'):   # Stay on safe side
                 self.print ('Transaction broken off')
                 return
             
@@ -126,7 +140,7 @@ class Nooc (bank.Bank):
             else:
                 self.print ('Success' if await self.executeCommandRemotely (slaveBankCode, command, accountNr, pin, amount) else 'Failure')
                 
-        elif command == 'quit':
+        elif self.match (command, 'quit'):
             for socket, role in ((self.masterSocket , 'master'), (self.slaveSocket, 'slave')):
                 await self.send (socket, role, 'disconnect')
                 reply = self.recv (socket, role)
@@ -150,21 +164,21 @@ class Nooc (bank.Bank):
         - Returns True if command succeeds
         - Returns False if command fails
         '''
-        if command == 'open':
+        if self.match (command, 'open'):
             if accountNr in self.accounts:
                 return False
             else:
                 self.accounts [accountNr] = self.Account (pin)
                 return True
-        elif command == 'close':
+        elif self.match (command, 'close'):
             if accountNr in self.accounts:
                 del self.accounts [accountNr]
                 return True
             else:
                 return False
-        elif command in {'deposit', 'withdraw'}:
+        elif self.match (command, 'deposit', 'withdraw'):
             if accountNr in self.accounts and self.accounts [accountNr] .pin == pin and amount >= 0:
-                if command == 'deposit':
+                if self.match (command, 'deposit'):
                     self.accounts [accountNr] .balance += amount
                     return True
                 else:

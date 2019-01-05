@@ -60,6 +60,9 @@ class Noob (bank.Bank):
         # Prevent termination of event loop
         asyncio.get_event_loop () .run_forever ()
         
+    def reportUnknownBankCode (self, bankCode):
+        self.print (f'Error - Unknown bank code: {bankCode}')
+        
     async def server (self, socket, path):
         '''
         Role communication handler
@@ -84,11 +87,16 @@ class Noob (bank.Bank):
                         message = await self.recv (socket, role)
                         
                         # Put it in the queue belonging to the right slave
-                        await self.commandQueues [message [0]] .put ([bankCode] + message [1:])
+                        try:
+                            await self.commandQueues [message [0]] .put ([bankCode] + message [1:])
+                            
+                            # Get reply of slave from own master queue and send it to master
+                            # The master gives a command to only one slave at a time, so he knows who answered
+                            await self.send (socket, role, await self.replyQueues [bankCode] .get ())                            
+                        except KeyError:
+                           self.reportUnknownBankCode (message [0])
+                           await self.send (socket, role, False)                            
                         
-                        # Get reply of slave from own master queue and send it to master
-                        # The master gives a command to only one slave at a time, so he knows who answered
-                        await self.send (socket, role, await self.replyQueues [bankCode] .get ())
                 else:
                     self.replyQueues [bankCode] = asyncio.Queue ()
                     while True:
@@ -96,16 +104,21 @@ class Noob (bank.Bank):
                         message = await self.recv (socket, role)
                         
                         # Wait until command in own slave queue
-                        message = await self.commandQueues [bankCode] .get ()
+                        try:
+                            message = await self.commandQueues [bankCode] .get ()
+                        except KeyError:
+                            self.reportUnknownBankCode (bankCode)
                         
                         # Send it to own slave
                         await self.send (socket, role, message [1:])
                                                
                         # Get reply from own slave and put it in the right reply queue
-                        await self.replyQueues [message [0]] .put (await self.recv (socket, role))    
-
+                        try:
+                            await self.replyQueues [message [0]] .put (await self.recv (socket, role))
+                        except:
+                            self.reportUnknownBankCode (message [0])
             else:
-                self.print (f'Error: register command expected')
+                self.print (f'Error - Registration expected, got command: {command}')
                 await socket.send (json.dumps (False), role)
                 sys.exit (1)
         except:

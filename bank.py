@@ -3,9 +3,10 @@ import aioconsole
 
 class Bank:
     show = True
+    local = True
 
-    centralHostName = 'localhost'
-    centralPortNr = 8765
+    centralHostName = 'localhost' if local else '192.168.2.1'
+    centralPortNr = 6666
     centralBankCode = 'noob'
         
     def __init__ (self, bankCode):
