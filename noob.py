@@ -42,7 +42,7 @@ Replies
 =======
 All commands for both roles are replied upon:
 	[True] means succes, [False] means failure.
-
+    
 
 Happy banking!
 '''

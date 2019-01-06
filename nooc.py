@@ -76,7 +76,7 @@ class Nooc (bank.Bank):
                 )
     
     async def issueCommandFromLocal (self):
-        ''' Obtains a command from the console and issues and execution order
+        ''' Obtains a command from the console and issues an execution order
         - If the bankcode matches the local bank, the order is executed locally
         - If the bankcode doesn't match this local bank, the order is executed remotely
         '''
