@@ -12,7 +12,7 @@ To get acquainted with how it works,
 start several instances if the consumer bank emulator (NOOC),
 each with its own bank code and currency conversion rate.
 
-Note that while the NOOB written in Python,
+Note that while the NOOB is written in Python,
 its clients may be written in any language,
 as long as they speak JSON over WebSockets.
 
