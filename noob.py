@@ -16,23 +16,33 @@ Note that while the NOOB written in Python,
 its clients may be written in any language,
 as long as they speak JSON over WebSockets.
 
-Clients are required to utilize the NOOB protocol.
+Clients are required to utilize the NOOB protocol:
 
-It consists of following message types:
+Master role
+===========
+Remotely opening an ABNA account from bank INGB happens by sending to the NOOB:
+	["ABNA", "open", 300400, 1234, 0]
+    
+Remotely closing this ABNA account from bank INGB happens by sending to the NOOB:
+	["ABNA", "close", 300400, 1234, 0]
+    
+Deposing 1000 local coins on this ABNA account from bank INGB happens by sending to the NOOB:
+	["ABNA", "deposit", 300400, 1234, 1000]
+    
+Withdrawing 199.50 local coins from this ABNA account from bank INGB happens by sending to the NOOB:
+	["ABNA", "withdraw", 300400, 1234, 199.50]
+    
+The hack command allows inspecting all local accounts on a NOOC.
 
-- ['connect', <bank code : string>]
-- ['disconnect']
+Slave role
+==========
+All commands received by the slave are the same as the ones sent by the master, only with the first (bank code) parameter omitted.
 
-- ['open', <bank code : string> <account nr : string>, <pin : string>, <amount in euro's = 0 : float>]
-- ['close', <bank code : string> <account nr : string>, <pin : string>, <amount in euro's = 0 : float>]
+Replies
+=======
+All commands for both roles are replied upon:
+	[True] means succes, [False] means failure.
 
-- ['deposit', <bank code : string> <account nr : string>, <pin : string>, <amount in euro's : float>]
-- ['withdraw', <bank code : string> <account nr : string>, <pin : string>, <amount in euro's : float>]
-
-Possible replies are:
-
-- True (meaning success)
-- False (meaning failure)
 
 Happy banking!
 '''
