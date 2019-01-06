@@ -49,16 +49,15 @@ class Nooc (bank.Bank):
         self.valueOfLocalCoinInEuros = valueOfLocalCoinInEuros  # All communication with central bank done in Euros
         self.accounts = {}
         
-        clientCoroutineObject = self.client ()
-        asyncio.run (clientCoroutineObject)
+        asyncio.run (self.clientsCreator ())
 
-    async def client (self):
+    async def clientsCreator (self):
         ''' Initiates master and slave connections
         - The master connection is used to perform locally requested transactions on a remote bank
         - The slave connection is used to perform remotely requested transactions on the local bank
         '''
         
-        async def run (socket, role, action):
+        async def roleClient (socket, role, action):
             await self.send (socket, role, ['register', role, self.bankCode])
             if await self.recv (socket, role):
                 self.print (f'Registration of {role} accepted by {self.centralBankCode}')   
@@ -72,16 +71,9 @@ class Nooc (bank.Bank):
              async with websockets.connect (self.noobUrl) as self.slaveSocket:
                 self.print ('Slave connection accepted by NOOB')
                 await asyncio.gather (
-                    run (self.slaveSocket, 'slave', self.issueCommandFromRemote),                        
-                    run (self.masterSocket, 'master', self.issueCommandFromLocal)
+                    roleClient (self.slaveSocket, 'slave', self.issueCommandFromRemote),
+                    roleClient (self.masterSocket, 'master', self.issueCommandFromLocal)
                 )
-            
-    def match (self, commandStart, *commandSet):
-        for command in commandSet:
-            if command.startswith (commandStart):
-                return True
-        else:
-            return False
     
     async def issueCommandFromLocal (self):
         ''' Obtains a command from the console and issues and execution order
@@ -108,7 +100,7 @@ class Nooc (bank.Bank):
             
             pin = await self.input ('Pin: ')
             
-            slaveBankCode = await self.input ('Bank code (enter = this): ')
+            slaveBankCode = await self.input ('Bank code (press [enter] for local bank): ')
             if not slaveBankCode:
                 slaveBankCode = self.bankCode
                 self.print (f'Bank code {slaveBankCode} assumed')

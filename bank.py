@@ -17,7 +17,8 @@ class Bank:
             print (f'{self.bankCode.upper ()} -', *args, end = end, flush = True)
             
     async def input (self, *args):
-        self.print (*args, end = '')
+        if args:
+            self.print (*args, end = '')
         return (await aioconsole.ainput ('')) .lower ()
             
     async def send (self, socket, role, message, show = True):
@@ -28,3 +29,10 @@ class Bank:
         message = json.loads (await socket.recv ())
         self.print (f'Received {role}: {message}', show = show)
         return message
+            
+    def match (self, commandStart, *commandSet):
+        for command in commandSet:
+            if command.startswith (commandStart):
+                return True
+        else:
+            return False

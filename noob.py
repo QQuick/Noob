@@ -45,25 +45,38 @@ import traceback
 import bank
 
 class Noob (bank.Bank):
+    class RegistrationError (Exception):
+        pass
+
     def __init__ (self):
         super () .__init__ (self.centralBankCode)
         
-        self.print ('Central bank initiated')
+        self.print ('Central bank initiated (type q(uit) to exit)')
         
+        # Create message queues
         self.commandQueues = {}
         self.replyQueues = {}
         
-        # Start socket creator (as opposed to server) and run it until complete, which is never
-        serverFuture = websockets.serve (self.server, self.centralHostName, self.centralPortNr)
+        # Start servers creator (as opposed to server) and run it until complete, which is never
+        serverFuture = websockets.serve (self.roleServer, self.centralHostName, self.centralPortNr)
         asyncio.get_event_loop () .run_until_complete (serverFuture)
         
-        # Prevent termination of event loop
-        asyncio.get_event_loop () .run_forever ()
+        # Start command interpreter
+        asyncio.get_event_loop () .run_until_complete (self.commandInterpreter ())
         
+        # Prevent termination of event loop, since role servers subscribed to it
+        asyncio.get_event_loop () .run_forever ()
+    
+    async def commandInterpreter (self):
+        while True:
+            command = await self.input ()
+            if self.match (command, 'quit'):
+                exit (0)
+                
     def reportUnknownBankCode (self, bankCode):
         self.print (f'Error - Unknown bank code: {bankCode}')
         
-    async def server (self, socket, path):
+    async def roleServer (self, socket, path):
         '''
         Role communication handler
         - Called once for each master and once for each slave
@@ -74,14 +87,15 @@ class Noob (bank.Bank):
         
         try:
             self.print (f'Instantiated socket: {socket}')
-            role = 'uncommited'
 
+            command, role, bankCode = None, None, None
             command, role, bankCode = await (self.recv (socket, role))
+            
             if command == 'register':
                 await self.send (socket, role, True)
 
                 if role == 'master':
-                    self.commandQueues [bankCode] = asyncio.Queue ()
+                    self.commandQueues [bankCode] = asyncio.Queue ()    # This will also replace an abandoned queue by an empty one
                     while True:
                         # Receive command from own master
                         message = await self.recv (socket, role)
@@ -98,7 +112,7 @@ class Noob (bank.Bank):
                            await self.send (socket, role, False)                            
                         
                 else:
-                    self.replyQueues [bankCode] = asyncio.Queue ()
+                    self.replyQueues [bankCode] = asyncio.Queue ()      # This will also replace an abandoned queue by an empty one
                     while True:
                         # Receive query from own slave
                         message = await self.recv (socket, role)
@@ -118,12 +132,18 @@ class Noob (bank.Bank):
                         except:
                             self.reportUnknownBankCode (message [0])
             else:
-                self.print (f'Error - Registration expected, got command: {command}')
-                await socket.send (json.dumps (False), role)
-                sys.exit (1)
-        except:
-            self.print (traceback.format_exc ())
-            sys.exit (1)
+                raise self.RegistrationError ()
+        except self.RegistrationError:
+            try:
+                await socket.send (json.dumps (False), role)            # Try to notify client
+            except:
+                pass                                                    # Escape if client closed connection
+                
+            self.print (f'Error: registration expected, got command: {command}')
+        except websockets.exceptions.ConnectionClosed:
+            self.print (f'Error: connection closed by {bankCode} as {role}')
+        except Exception:
+            self.print (f'Error: in serving {bankCode} as {role}\n{traceback.format_exc ()}')
               
 noob = Noob ()
 
