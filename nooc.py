@@ -147,7 +147,6 @@ class Nooc (bank.Bank):
         - The central bank used the bank code on the order it received, to send it to this bank specifially, for local execution
         - Since there's no need for the bank code anymore, the central bank stripped it off
         '''
-        await self.send (self.slaveSocket, 'slave', 'query', self.debug)
         command, accountNr, pin, amount = await self.recv (self.slaveSocket, 'slave', self.debug)
         await self.send (self.slaveSocket, 'slave', self.executeCommandLocally (command, accountNr, pin, amount / self.valueOfLocalCoinInEuros), self.debug)
                 

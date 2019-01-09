@@ -55,6 +55,8 @@ import traceback
 import bank
 
 class Noob (bank.Bank):
+    timePerQueueCreationPoll = 0.1
+
     class RegistrationError (Exception):
         pass
 
@@ -64,8 +66,8 @@ class Noob (bank.Bank):
         self.print ('Central bank initiated (type q(uit) to exit)')
         
         # Create message queues
-        self.commandQueues = {}
-        self.replyQueues = {}
+        self.commandQueues = {}        
+        self.replyQueues = {}        
         
         # Start servers creator (as opposed to server) and run it until complete, which is never
         serverFuture = websockets.serve (self.roleServer, self.centralHostName, self.centralPortNr)
@@ -85,6 +87,14 @@ class Noob (bank.Bank):
                 
     def reportUnknownBankCode (self, bankCode):
         self.print (f'Error - Unknown bank code: {bankCode}')
+        
+    async def created (self, bankCode, queues):
+        for iAttempt in range (round (1 / self.timePerQueueCreationPoll)):   # Repeated attempts for 1 sec in total
+            if bankCode in queues:
+                break
+            await asyncio.sleep (self.timePerQueueCreationPoll)      # Only a short sleep, so possibly fast reaction
+        else:
+            self.reportUnknownBankCode (bankCode)
         
     async def roleServer (self, socket, path):
         '''
@@ -106,6 +116,8 @@ class Noob (bank.Bank):
 
                 if role == 'master':
                     self.commandQueues [bankCode] = asyncio.Queue ()    # This will also replace an abandoned queue by an empty one
+                    await self.created (bankCode, self.replyQueues)
+                    
                     while True:
                         # Receive command from own master
                         message = await self.recv (socket, role)
@@ -120,18 +132,13 @@ class Noob (bank.Bank):
                         except KeyError:
                            self.reportUnknownBankCode (message [0])
                            await self.send (socket, role, False)                            
-                        
                 else:
                     self.replyQueues [bankCode] = asyncio.Queue ()      # This will also replace an abandoned queue by an empty one
-                    while True:
-                        # Receive query from own slave
-                        message = await self.recv (socket, role)
-                        
+                    await self.created (bankCode, self.commandQueues)
+                    
+                    while True:                     
                         # Wait until command in own slave queue
-                        try:
-                            message = await self.commandQueues [bankCode] .get ()
-                        except KeyError:
-                            self.reportUnknownBankCode (bankCode)
+                        message = await self.commandQueues [bankCode] .get ()
                         
                         # Send it to own slave
                         await self.send (socket, role, message [1:])
