@@ -55,15 +55,20 @@ import traceback
 import bank
 
 class Noob (bank.Bank):
+    version = '1.0.1'
     timePerQueueCreationPoll = 0.1
+    exitServerMessage = '__exit_server__'
 
     class RegistrationError (Exception):
+        pass
+        
+    class ExitConnection (Exception):
         pass
 
     def __init__ (self):
         super () .__init__ (self.centralBankCode)
         
-        self.print ('Central bank initiated (type q(uit) to exit)')
+        self.print (f'Central bank {self.version} initiated (type q(uit) to exit)')
         
         # Create message queues
         self.commandQueues = {}        
@@ -77,7 +82,7 @@ class Noob (bank.Bank):
         asyncio.get_event_loop () .run_until_complete (self.commandInterpreter ())
         
         # Prevent termination of event loop, since role servers subscribed to it
-        asyncio.get_event_loop () .run_forever ()
+        asyncio.get_event_loop () .run_forever ()        
     
     async def commandInterpreter (self):
         while True:
@@ -122,6 +127,10 @@ class Noob (bank.Bank):
                         # Receive command from own master
                         message = await self.recv (socket, role)
                         
+                        # Obey exit request by own slave
+                        if message == self.exitServerMessage:
+                            raise self.ExitConnection ()
+                        
                         # Put it in the queue belonging to the right slave
                         try:
                             await self.commandQueues [message [0]] .put ([bankCode] + message [1:])
@@ -140,6 +149,10 @@ class Noob (bank.Bank):
                         # Wait until command in own slave queue
                         message = await self.commandQueues [bankCode] .get ()
                         
+                        # Obey exit request by own master
+                        if message == self.exitServerMessage:
+                            raise self.ExitConnection ()
+                        
                         # Send it to own slave
                         await self.send (socket, role, message [1:])
                                                
@@ -157,8 +170,16 @@ class Noob (bank.Bank):
                 pass                                                    # Escape if client closed connection
                 
             self.print (f'Error: registration expected, got command: {command}')
+            
         except websockets.exceptions.ConnectionClosed:
             self.print (f'Error: connection closed by {bankCode} as {role}')
+            del (self.replyQueues if role == 'master' else self.commandQueues) [bankCode]
+            await (self.commandQueues if role == 'master' else self.replyQueues) [bankCode].put (self.exitServerMessage)
+            
+        except self.ExitConnection:
+            del (self.replyQueues if role == 'master' else self.commandQueues) [bankCode]
+            self.print (f'Consequence: connection closed by central bank for {bankCode} as {role}')
+                
         except Exception:
             self.print (f'Error: in serving {bankCode} as {role}\n{traceback.format_exc ()}')
               

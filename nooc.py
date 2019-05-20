@@ -27,6 +27,7 @@ import websockets
 import bank
     
 class Nooc (bank.Bank):
+    version = '1.0.0'
     debug = False
     
     columnWidth = 15
@@ -34,7 +35,7 @@ class Nooc (bank.Bank):
     tableWidth = nrOfColumns * columnWidth + nrOfColumns - 1
     tableSeparator = '=' * tableWidth
     headerUnderline = '-' * tableWidth
-    
+        
     class Account:
         def __init__ (self, pin):
             self.pin = pin
@@ -43,7 +44,7 @@ class Nooc (bank.Bank):
     def __init__ (self, bankCode, valueOfLocalCoinInEuros):
         super () . __init__ (bankCode)
         
-        self.print ('Consumer bank emulator initiated')
+        self.print (f'Consumer bank emulator version {self.version} initiated')
         self.noobUrl = f'ws://{self.centralHostName}:{self.centralPortNr}'
         
         self.valueOfLocalCoinInEuros = valueOfLocalCoinInEuros  # All communication with central bank done in Euros
